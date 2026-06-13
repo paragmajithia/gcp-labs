@@ -192,8 +192,42 @@ If you did not note it down, find it via either of these:
 7. In **"Role"**: select **Billing Account Administrator**
 8. Click **Save**
 
-✅ **Done when:** the service account email appears under "Billing Account Administrator" in the right panel
-(alongside your own Gmail)
+### 5c — Add it to Project IAM (IMPORTANT)
+
+The Billing Account Administrator role alone is **not sufficient**.
+The Cloud Billing API also checks permissions on the project itself.
+
+1. GCP Console → **IAM & Admin → IAM**
+2. Click **Grant access**
+3. In **New principals**: paste the same service account email
+4. In **Role**: select **Owner**
+5. Click **Save**
+
+> During testing, if this permission is missing, the function fails with:
+>
+> ```
+> HttpError 403:
+> The caller does not have permission
+> ```
+>
+> You can verify the service account roles with:
+>
+> ```bash
+> gcloud projects get-iam-policy YOUR_PROJECT_ID > --flatten="bindings[].members" > --filter="bindings.members:SERVICE_ACCOUNT_EMAIL" > --format="table(bindings.role)"
+> ```
+>
+> If you only see:
+>
+> ```
+> roles/run.builder
+> roles/run.invoker
+> ```
+>
+> then the required project permission has not been granted.
+
+✅ **Done when:** the service account appears as:
+- Billing Account Administrator (Billing IAM)
+- Owner (Project IAM)
 
 ---
 
