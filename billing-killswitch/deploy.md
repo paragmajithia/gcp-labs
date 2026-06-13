@@ -42,9 +42,10 @@ Search and enable each of the following one by one:
 | API to enable | Why it's needed |
 |--------------|-----------------|
 | `Cloud Run API` | Runs your kill switch function |
-| `Cloud Billing API` | Lets function disable billing |
+| `Cloud Billing API` | Lets function disable/enable billing on your project |
 | `Cloud Pub/Sub API` | Receives budget alert messages |
 | `Cloud Billing Budget API` | Creates and monitors your budget |
+| `Cloud Resource Manager API` | Required by billing API to look up project info |
 
 > Each has an **Enable** button. Click and wait for the green tick before moving to the next.
 
@@ -239,8 +240,15 @@ gcloud logging read \
 
 ## Step 7 — End-to-End Test (Real Kill Switch Test)
 
-This test uses a ₹1 budget so the kill switch actually fires — giving you real confidence,
-not just a simulated message.
+Choose **one** of the two options below based on your current spend.
+Both options test the full chain: Pub/Sub → Function → Billing API.
+
+---
+
+### Option A — ₹1 Test Budget (use when you have some spend this month)
+
+This creates a real budget at ₹1. Since your project has already spent more than ₹1,
+the alert fires automatically within minutes — no manual action needed.
 
 > ⚠️ **Warning:** Your GCP services will briefly stop during this test.
 > ⚠️ Do this when you are not actively running anything on the project.
@@ -300,6 +308,56 @@ GCP Console → **Billing → Budgets & alerts** → click `killswitch-TEST` →
 > If you skip this, the ₹1 budget will keep firing the kill switch every time GCP reports costs.
 
 ✅ **Done when:** only `killswitch-budget` remains in your budgets list, `killswitch-TEST` is gone
+
+---
+
+### Option B — Publish Fake Message via Cloud Shell (use when current spend is ₹0)
+
+If your project has ₹0 spend this month, the ₹1 budget won't fire automatically.
+Instead, publish a fake budget message directly to Pub/Sub — the function receives it
+exactly as if a real budget alert fired. Same end-to-end chain, crafted message.
+
+> ⚠️ **Warning:** This will actually disable your billing — it is a real test, not a dry run.
+> ⚠️ You must re-enable billing immediately after (takes 2 minutes).
+
+**7g — Publish a fake over-budget message:**
+```bash
+gcloud pubsub topics publish billing-killswitch   --message='{"costAmount": 1500, "budgetAmount": 1000, "budgetDisplayName": "killswitch-budget"}'
+```
+
+This tells the function: "you have spent ₹1500 against a ₹1000 budget" — triggering the kill switch.
+
+**7h — Watch the logs immediately after:**
+```bash
+gcloud logging read   "resource.type=cloud_run_revision AND resource.labels.service_name=billing-killswitch"   --limit=10   --format="table(timestamp, textPayload)"   --freshness=5m
+```
+
+Expected output:
+```
+Budget check → Spent: ₹1500.0 | Limit: ₹1000.0
+OVER BUDGET! ₹1500.0 > ₹1000.0. Disabling billing now...
+✅ Billing DISABLED for project: gcp-labs
+```
+
+**7i — Confirm billing is disabled:**
+```bash
+gcloud beta billing projects describe project-207daf80-c763-429b-8cb | grep billingEnabled
+# Expected: billingEnabled: false
+```
+
+**7j — Re-enable billing immediately:**
+
+1. GCP Console → **Billing → Account management**
+2. Your project will show "Billing disabled"
+3. Click **"Link a billing account"** → select `gcp-labs-billing` → Save
+
+```bash
+# Confirm billing is back on
+gcloud beta billing projects describe project-207daf80-c763-429b-8cb | grep billingEnabled
+# Expected: billingEnabled: true
+```
+
+✅ **Done when:** billing is re-enabled and logs show the expected kill switch output
 
 ---
 
