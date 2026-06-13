@@ -1,195 +1,291 @@
 # Deploy Guide — GCP Billing Kill Switch
 
-Follow these steps in order. Takes about 10 minutes total.
-All steps are done in GCP Console. No CLI needed for setup.
-gcloud commands are only used for verification and testing at the end.
+**Time required:** ~15 minutes  
+**All setup is done via GCP Console** (no CLI needed for setup)  
+**Cloud Shell** (browser terminal) is only used for verification and testing at the end
 
 ---
 
-## Before You Start — Note These Down
+## Before You Start
 
-You'll need these two values during setup:
+Note these two values — you will need them during setup:
 
-| What | Where to find it | Your value |
-|------|-----------------|------------|
-| Project ID | GCP Console → top bar dropdown | e.g. `housing-society-bot` |
-| Billing Account ID | Billing → Account management → "ID" column | e.g. `ABCD12-EFGH34-IJKL56` |
+| What | Where to find it | Example |
+|------|-----------------|---------|
+| **Project ID** | GCP Console → top bar project dropdown | `gcp-labs` |
+| **Billing Account ID** | Billing → Account management → ID field | `01489A-10A50B-0CFF2D` |
+
+---
+
+## Overview of What You Are Building
+
+```
+Monthly spend hits ₹1,000
+        ↓
+Budget Alert fires → sends message to Pub/Sub topic
+        ↓
+Cloud Run Function wakes up → checks: am I over budget?
+        ↓ YES
+Billing account unlinked from project
+        ↓
+All GCP services stop. Zero further charges.
+```
 
 ---
 
 ## Step 1 — Enable Required APIs
 
-Go to: **GCP Console → APIs & Services → Enable APIs and Services**
+**Navigate to:** GCP Console → APIs & Services → Enable APIs and Services
 
-Search and enable each of these:
-- `Cloud Functions API`
-- `Cloud Billing API`
-- `Cloud Pub/Sub API`
+Search and enable each of the following one by one:
 
-> Each one has an "Enable" button. Click it and wait for the green tick.
+| API to enable | Why it's needed |
+|--------------|-----------------|
+| `Cloud Run API` | Runs your kill switch function |
+| `Cloud Billing API` | Lets function disable billing |
+| `Cloud Pub/Sub API` | Receives budget alert messages |
+| `Cloud Billing Budget API` | Creates and monitors your budget |
+
+> Each has an **Enable** button. Click and wait for the green tick before moving to the next.
+
+✅ **Done when:** all four APIs show as Enabled
 
 ---
 
 ## Step 2 — Create Pub/Sub Topic
 
-This is the "pipe" that budget alerts flow through to reach your function.
+The Pub/Sub topic is the "pipe" through which budget alerts flow to your function.
 
-1. GCP Console → search **"Pub/Sub"** in the top search bar
+1. GCP Console → search **"Pub/Sub"** in the top search bar → open it
 2. Click **"Create Topic"**
-3. Topic ID: `billing-killswitch`
-4. Uncheck "Add a default subscription" (not needed)
-5. Click **Create**
+3. Set:
+   - Topic ID: `billing-killswitch`
+   - Uncheck **"Add a default subscription"** (not needed)
+4. Click **Create**
 
-✅ You should see `billing-killswitch` listed in your topics.
+✅ **Done when:** `billing-killswitch` appears in your topics list
 
 ---
 
 ## Step 3 — Create Budget Alert
 
-This watches your spend and fires a message when you hit ₹2,000.
+This watches your monthly spend and fires a Pub/Sub message when you hit your limit.
 
 1. GCP Console → **Billing → Budgets & alerts → Create Budget**
 2. Fill in:
    - Name: `killswitch-budget`
    - Time range: `Monthly`
-   - Projects: select your project
-   - Amount: `₹2000`
-3. Set alert thresholds (click "Add threshold rule" for each):
-   - `50%` of budget → email alert
-   - `90%` of budget → email alert
-   - `100%` of budget → this triggers the kill switch
-4. Scroll to **"Manage notifications"**
-   - Toggle ON: **"Connect a Pub/Sub topic"**
-   - Select: `billing-killswitch` (the topic you just created)
+   - Projects: select your project (`gcp-labs`)
+   - Amount: `₹1000` (or your chosen limit)
+3. Set alert thresholds:
+   - `50%` → ₹500 — early warning email
+   - `90%` → ₹900 — final warning email
+   - `100%` → ₹1000 — **this one triggers the kill switch**
+
+   > All thresholds share the same notification channels (GCP limitation).
+   > The function only acts at 100% — it ignores the 50% and 90% messages.
+
+4. Under **"Manage notifications"**:
+   - ✅ Tick **"Email alerts to billing admins and users"**
+   - ✅ Tick **"Email alerts to project owners"** ← so you personally get warned
+   - ✅ Tick **"Connect a Pub/Sub topic"** → select `billing-killswitch`
 5. Click **Save**
 
-✅ Budget should appear in your Budgets & alerts list.
+✅ **Done when:** `killswitch-budget` appears in your Budgets & alerts list
 
 ---
 
-## Step 4 — Deploy the Cloud Function
+## Step 4 — Deploy the Cloud Run Function
 
-This is the function that actually disables billing.
+This is the function that actually disables billing when the budget is exceeded.
 
-1. GCP Console → search **"Cloud Functions" → Create Function**
-2. **Basics tab:**
-   - Environment: `2nd gen`
-   - Function name: `billing-killswitch`
-   - Region: `asia-south1` (Mumbai — lowest latency for you)
-3. **Trigger tab:**
-   - Trigger type: `Cloud Pub/Sub`
-   - Topic: select `billing-killswitch`
-   - Click **Save**
-4. Click **Next**
-5. **Code tab:**
-   - Runtime: `Python 3.11`
+> **Note:** GCP has unified Cloud Functions into Cloud Run.
+> Searching "Cloud Functions" lands you on Cloud Run — that is correct.
+
+### 4a — Create the service
+
+1. GCP Console → search **"Cloud Run"** → open it
+2. Scroll to **"Write a function"** section → click **"Python"**
+3. Fill in:
+   - Service name: `billing-killswitch`
+   - Region: `asia-south1` (Mumbai)
+
+### 4b — Add Pub/Sub trigger
+
+4. Scroll to **"Trigger"** → click **"+ Add trigger"** → select **"Cloud Pub/Sub"**
+5. In the side panel that opens:
+   - Select topic: `billing-killswitch`
+   - Service account: leave as `Compute Engine default service account`
+   - A yellow warning appears: *"You need to grant the following roles..."*
+   - Click **"Grant all"** ← this allows Pub/Sub to invoke your function
+   - Click **"Save"** on the side panel
+
+### 4c — Paste the code
+
+6. In the inline code editor:
+   - Runtime: `Python 3.14` (or latest available)
    - Entry point: `stop_billing`
-   - In the `main.py` file in the editor: **delete everything** and paste the contents of `main.py` from this folder
-   - Click on `requirements.txt` tab in the editor: **delete everything** and paste the contents of `requirements.txt` from this folder
-6. **Environment variables** (still on Code tab, scroll down):
-   - Click "Add variable"
+   - In the **`main.py`** tab: delete everything → paste contents of `main.py` from this folder
+   - In the **`requirements.txt`** tab: delete everything → paste contents of `requirements.txt` from this folder
+
+### 4d — Add environment variable
+
+7. Scroll to **"Environment variables"** → click **"Add variable"**:
    - Name: `PROJECT_ID`
-   - Value: your project ID (e.g. `housing-society-bot`)
-7. Click **Deploy**
+   - Value: your project ID (e.g. `gcp-labs`)
 
-> Deployment takes 2–3 minutes. Wait for the green tick next to the function name.
+### 4e — Configure remaining settings
 
-✅ Function should show status: **Active**
+Scroll down and set the following:
+
+| Section | Setting | Value | Why |
+|---------|---------|-------|-----|
+| **Authentication** | Mode | Require authentication + IAM | Only Pub/Sub can call this, not public internet |
+| **Billing** | Type | Request-based | Charged only when function runs — near zero cost |
+| **Service Scaling** | Min instances | `0` | No idle cost; spins up only when triggered |
+| **Service Scaling** | Max instances | leave blank | Default is fine |
+| **Ingress** | Access | Internal | Callable only from within GCP, not public internet |
+
+8. Click **"Create"** at the bottom
+
+> Deployment takes 2–3 minutes. Wait for the green tick.
+
+✅ **Done when:** `billing-killswitch` shows as **Ready** in Cloud Run → Services
 
 ---
 
 ## Step 5 — Grant Billing Permission to the Function
 
-This is the most important step. Without this, the function can't disable billing.
+This is the most critical step. The function runs as a **robot identity** (service account),
+not as you. That robot needs permission to disable billing — without this, the kill switch silently fails.
 
-1. GCP Console → **Cloud Functions** → click `billing-killswitch`
-2. Go to **Details tab**
-3. Find **"Service account"** — copy that email address
-   (looks like: `billing-killswitch@your-project.iam.gserviceaccount.com`)
-4. Go to **Billing → Account management → IAM** (top right area of billing page)
-5. Click **"Add"** (or Grant Access)
-6. Paste the service account email
-7. Role: **Billing Account Administrator**
+> **Your Gmail vs the Service Account**
+> - `paraginsights@gmail.com` — that's you, the human. Already in billing IAM. Leave it as is.
+> - `xxxx-compute@developer.gserviceaccount.com` — that's the robot your function runs as. This is what you need to add.
+
+### 5a — Find the service account email
+
+The email was shown in the yellow **"Grant all"** warning during Step 4 (Pub/Sub trigger setup).
+It looks like:
+```
+1009281923079-compute@developer.gserviceaccount.com
+```
+If you did not note it down, find it via either of these:
+
+**Option A — YAML tab (fastest):**
+1. GCP Console → **Cloud Run** → click `billing-killswitch`
+2. Click the **"YAML"** tab
+3. Search for `serviceAccountName:` — the email is right there
+
+**Option B — Edit revision:**
+1. GCP Console → **Cloud Run** → click `billing-killswitch`
+2. Click **"Edit & deploy new revision"** at the top
+3. Scroll to the **"Security"** section in the edit form
+4. **"Service account"** field shows the email clearly
+5. Copy it → click **Cancel** (do not deploy)
+### 5b — Add it to Billing IAM
+
+4. GCP Console → **Billing → Account management**
+5. On the right panel, click **"Add principal"**
+6. In **"New principals"**: paste the service account email you just copied
+7. In **"Role"**: select **Billing Account Administrator**
 8. Click **Save**
 
-✅ The function now has permission to disable billing.
+✅ **Done when:** the service account email appears under "Billing Account Administrator" in the right panel
+(alongside your own Gmail)
 
 ---
 
-## Step 6 — Verify Everything is Set Up
+## Step 6 — Verify the Setup
 
-Run these commands in **Cloud Shell** (GCP Console → top right terminal icon).
-No local installation needed — Cloud Shell has gcloud pre-installed.
+Open **Cloud Shell** from GCP Console (click the `>_` terminal icon in the top right bar).
+Cloud Shell has `gcloud` pre-installed — no local setup needed.
 
+**First — set your active project in Cloud Shell (required before any other command):**
 ```bash
-# Check function is deployed and active
-gcloud functions list --region=asia-south1
+# List your projects to find the correct project ID
+gcloud projects list
 
-# Expected output: billing-killswitch ... ACTIVE
+# Set the active project (replace with your actual project ID from the list above)
+gcloud config set project project-207daf80-c763-429b-8cb
 ```
 
+> You must do this every time you open a fresh Cloud Shell session. Otherwise commands
+> may run against the wrong project or fail with "project not found" errors.
+
+**Check 1 — Function is deployed and ready:**
 ```bash
-# Check Pub/Sub topic exists
+gcloud run services list --region=asia-south1
+# Expected: billing-killswitch ... READY
+```
+
+**Check 2 — Pub/Sub topic exists:**
+```bash
 gcloud pubsub topics list
-
-# Expected output: name: projects/YOUR_PROJECT/topics/billing-killswitch
+# Expected: name: projects/YOUR_PROJECT/topics/billing-killswitch
 ```
 
+**Check 3 — Function has no errors yet (logs should be empty):**
 ```bash
-# Check function logs (should be empty at this point — no triggers yet)
-gcloud functions logs read billing-killswitch \
-  --region=asia-south1 \
-  --limit=20
+gcloud logging read \
+  "resource.type=cloud_run_revision AND resource.labels.service_name=billing-killswitch" \
+  --limit=20 \
+  --format="table(timestamp, textPayload)"
 ```
 
-✅ If all three commands return expected output, setup is complete.
+✅ **Done when:** all three commands return expected output with no errors
 
 ---
 
-## Step 7 — Test the Kill Switch (Real End-to-End Test)
+## Step 7 — End-to-End Test (Real Kill Switch Test)
 
-This is a real test using a ₹1 budget — the kill switch will actually fire.
+This test uses a ₹1 budget so the kill switch actually fires — giving you real confidence,
+not just a simulated message.
 
-> ⚠️ Your project services will stop briefly. Re-enable billing after the test (see below).
-> ⚠️ Do this when you're not actively using the project.
+> ⚠️ **Warning:** Your GCP services will briefly stop during this test.
+> ⚠️ Do this when you are not actively running anything on the project.
+> ⚠️ You must re-enable billing after the test (takes 2 minutes).
 
-### 7a — Create a Test Budget (₹1 limit)
+### 7a — Create a ₹1 test budget
 
-Repeat Step 3 but with:
+Repeat Step 3 with these values only:
 - Name: `killswitch-TEST`
 - Amount: `₹1`
-- Same Pub/Sub topic: `billing-killswitch`
 - Threshold: `100%` only
+- Connect same Pub/Sub topic: `billing-killswitch`
 
-Since your project has already spent more than ₹1 this month, the alert will fire within minutes.
+Since your project has already spent more than ₹1 this month, the alert fires within minutes.
 
-### 7b — Watch the Logs
+### 7b — Watch the function logs
 
+Run this in Cloud Shell and keep it open:
 ```bash
-# Run this in Cloud Shell and keep watching (updates every 30 seconds)
-watch -n 30 "gcloud functions logs read billing-killswitch --region=asia-south1 --limit=10"
+watch -n 30 "gcloud logging read \
+  'resource.type=cloud_run_revision AND resource.labels.service_name=billing-killswitch' \
+  --limit=10 --format='table(timestamp,textPayload)'"
 ```
 
-### 7c — What You Should See in Logs
+### 7c — Expected log output
 
+Within a few minutes you should see:
 ```
 Budget check → Spent: ₹X | Limit: ₹1
 OVER BUDGET! ₹X > ₹1. Disabling billing now...
-✅ Billing DISABLED for project: your-project-id
+✅ Billing DISABLED for project: gcp-labs
 ```
 
-### 7d — Confirm Billing is Disabled
+### 7d — Confirm billing is disabled
 
 ```bash
 gcloud beta billing projects describe YOUR_PROJECT_ID | grep billingEnabled
 # Expected: billingEnabled: false
 ```
 
-### 7e — Re-enable Billing Immediately After Test
+### 7e — Re-enable billing immediately after test
 
-1. GCP Console → **Billing**
+1. GCP Console → **Billing → Account management**
 2. Your project will show "Billing disabled"
-3. Click **"Link a billing account"** → select your account → Save
+3. Click **"Link a billing account"** → select `gcp-labs-billing` → Save
 
 ```bash
 # Confirm billing is back on
@@ -197,18 +293,28 @@ gcloud beta billing projects describe YOUR_PROJECT_ID | grep billingEnabled
 # Expected: billingEnabled: true
 ```
 
-### 7f — Delete the Test Budget
+### 7f — Delete the test budget
 
-GCP Console → **Billing → Budgets & alerts** → click `killswitch-TEST` → Delete
+GCP Console → **Billing → Budgets & alerts** → click `killswitch-TEST` → **Delete**
 
-> This prevents it from firing again next time you use the project.
+> If you skip this, the ₹1 budget will keep firing the kill switch every time GCP reports costs.
+
+✅ **Done when:** only `killswitch-budget` remains in your budgets list, `killswitch-TEST` is gone
 
 ---
 
-## You're Done
+## You're Done ✅
 
-The real `killswitch-budget` (₹2,000) is now protecting your project.
+The kill switch is live and protecting your project.
 You never need to touch this again unless you want to change the limit.
 
-### To Change the Budget Limit Later
-Billing → Budgets & alerts → click `killswitch-budget` → Edit → change amount → Save
+---
+
+## Quick Reference
+
+| Task | How |
+|------|-----|
+| Change the budget limit | Billing → Budgets & alerts → `killswitch-budget` → Edit → change amount |
+| Re-enable billing after a kill | Billing → Account management → Link billing account |
+| Check if kill switch fired | Cloud Run → `billing-killswitch` → Logs tab |
+| Check current spend | Billing → Reports → Group by SKU → This month |
