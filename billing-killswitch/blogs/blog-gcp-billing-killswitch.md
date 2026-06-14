@@ -40,23 +40,6 @@ The function runs at `min instances: 0` — it sits completely idle and costs no
 
 ---
 
-## The One Thing Most Tutorials Get Wrong
-
-Almost every guide on this topic tells you to grant the **Owner** role to the service account running your function. That works — but it's the wrong call.
-
-The function's service account is a robot identity. Giving it `Owner` means that robot has full control over your entire project. If that service account were ever compromised, the blast radius is everything.
-
-The correct, minimal permissions are:
-
-| Where | Role | What it allows |
-|-------|------|----------------|
-| Billing Account | **Billing Account Administrator** | Call the Billing API |
-| Project | **Project Billing Manager** | Link/unlink billing only — nothing else |
-
-`Project Billing Manager` is a narrow role that does exactly one thing. That's all the function needs, and that's all it should have.
-
----
-
 ## What Happens to Your Data When It Fires?
 
 This is the first thing people ask. Your data is untouched.

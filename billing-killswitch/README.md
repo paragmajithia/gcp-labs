@@ -52,21 +52,6 @@ No local tools needed. No Terraform. The entire setup is done through the GCP Co
 
 ---
 
-## IAM — What Most Guides Get Wrong
-
-The function runs as a service account. Most tutorials tell you to grant it the `Owner` role on your project. That works but it is the wrong call — `Owner` gives full project control to a robot identity.
-
-The correct minimal permissions:
-
-| Where | Role | What it allows |
-|-------|------|----------------|
-| Billing Account | **Billing Account Administrator** | Call the Billing API |
-| Project | **Project Billing Manager** | Link/unlink billing only — nothing else |
-
-The deploy guide uses these exact roles.
-
----
-
 ## What Happens When the Kill Switch Fires
 
 | | |
