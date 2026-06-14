@@ -1,37 +1,35 @@
 # GCP Billing Kill Switch
 
-GCP has no built-in hard spending cap — only email alerts you can ignore. This project adds a real kill switch: when your monthly spend crosses a threshold you set, billing is automatically disabled and all services stop. No manual action needed, no surprise bills.
+GCP has no hard spending cap — only budget alerts that arrive after the money is already spent, and only if you're watching your inbox.
 
-Built for developers running personal GCP projects, learning Vertex AI, or experimenting with Cloud Run — where runaway costs are a real risk.
+This project adds what GCP is missing: a real kill switch. When your monthly spend crosses a limit you set, billing is automatically disabled and all services stop. No manual action, no inbox monitoring, no surprises.
+
+> 📖 **Full context and architecture walkthrough:** [GCP Has No Hard Spending Cap. Here's How to Add One in 15 Minutes.](#) *(replace with your Hashnode post URL)*
 
 ---
 
 ## How It Works
 
 ```
-Your GCP usage costs money
+Monthly spend hits your configured limit
         ↓
-Budget Alert fires at your configured limit
+Budget Alert fires → Pub/Sub topic (billing-killswitch)
         ↓
-Pub/Sub topic receives the alert
-        ↓
-Cloud Function wakes up
-        ↓
-Checks: am I over budget?
+Cloud Run Function wakes up → checks: am I over budget?
         ↓ YES
-Disables billing on your project
+Billing account unlinked from project
         ↓
 All services stop. Zero further charges.
 ```
 
-> **⚠️ Platform delay:** GCP records costs with a ~1–2 hour lag before budget alerts fire.
-> You may see ₹100–200 of overage before the kill switch triggers. This is a GCP limitation, not a bug in this code.
+> **⚠️ Platform delay:** GCP records costs with a ~1–2 hour lag before alerts fire.
+> You may see a small overage before the kill triggers. This is a GCP limitation, not a bug in this code.
 
 ---
 
 ## Architecture
 
-![High-level flow diagram](./billing-killswitch.drawio.svg)
+![High-level flow diagram](./diagram.svg)
 
 ---
 
@@ -39,9 +37,33 @@ All services stop. Zero further charges.
 
 | File | What it does |
 |------|--------------|
-| `main.py` | The Cloud Function — runs automatically in GCP when triggered |
+| `main.py` | The Cloud Run Function — runs automatically when triggered |
 | `requirements.txt` | Python dependencies for `main.py` |
-| `deploy.md` | Step-by-step setup guide (GCP Console, no CLI needed) |
+| `deploy.md` | Step-by-step setup guide — GCP Console only, no local CLI needed |
+| `blog/` | Backup of the blog post published on Hashnode |
+
+---
+
+## Deploy in 15 Minutes
+
+→ **[deploy.md](./deploy.md)** — full step-by-step guide with verification commands and a test procedure.
+
+No local tools needed. No Terraform. The entire setup is done through the GCP Console.
+
+---
+
+## IAM — What Most Guides Get Wrong
+
+The function runs as a service account. Most tutorials tell you to grant it the `Owner` role on your project. That works but it is the wrong call — `Owner` gives full project control to a robot identity.
+
+The correct minimal permissions:
+
+| Where | Role | What it allows |
+|-------|------|----------------|
+| Billing Account | **Billing Account Administrator** | Call the Billing API |
+| Project | **Project Billing Manager** | Link/unlink billing only — nothing else |
+
+The deploy guide uses these exact roles.
 
 ---
 
@@ -49,9 +71,9 @@ All services stop. Zero further charges.
 
 | | |
 |--|--|
-| ✅ | All GCP services stop (Cloud Run, Firestore, GCS, Vertex AI — everything) |
+| ✅ | All services pause — Cloud Run, Firestore, GCS, Vertex AI |
 | ✅ | No further charges accrue |
-| ✅ | **Your data is safe** — Firestore documents, GCS files are not deleted |
+| ✅ | **Your data is safe** — Firestore documents and GCS files are not deleted |
 | ✅ | Services are paused, not destroyed |
 
 ### To Re-enable (2 minutes)
@@ -67,11 +89,11 @@ All services stop. Zero further charges.
 
 | Spend | What happens |
 |-------|-------------|
-| 50% of limit | Email warning to you |
-| 90% of limit | Email warning to you |
+| 50% of limit | Email warning — early heads up |
+| 90% of limit | Email warning — act now |
 | 100% of limit | **Kill switch fires, billing disabled** |
 
-You set the limit during deploy. The guide uses ₹2,000 as an example.
+You set the limit during deploy. The deploy guide uses ₹2,000 as an example.
 
 ---
 
