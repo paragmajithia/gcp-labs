@@ -29,7 +29,7 @@ All services stop. Zero further charges.
 
 ## Architecture
 
-![High-level flow diagram](./diagram.svg)
+![High-level flow diagram](./billing-killswitch.drawio.svg)
 
 ---
 
