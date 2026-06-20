@@ -4,7 +4,7 @@ GCP has no hard spending cap — only budget alerts that arrive after the money 
 
 This project adds what GCP is missing: a real kill switch. When your monthly spend crosses a limit you set, billing is automatically disabled and all services stop. No manual action, no inbox monitoring, no surprises.
 
-> 📖 **Full context and architecture walkthrough:** [GCP Has No Hard Spending Cap. Here's How to Add One in 15 Minutes.](#) *(replace with your Hashnode post URL)*
+> 📖 **Full context and architecture walkthrough:** [GCP Has No Hard Spending Cap. Here's How to Add One in 15 Minutes.](https://paragmajithia.com/blog/gcp-bills-post/))
 
 ---
 
