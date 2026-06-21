@@ -21,6 +21,7 @@ PROJECT_ID = os.environ.get("PROJECT_ID")   # set as environment variable in Clo
 # ─────────────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("google_auth_httplib2").setLevel(logging.ERROR)
 log = logging.getLogger(__name__)
 
 
