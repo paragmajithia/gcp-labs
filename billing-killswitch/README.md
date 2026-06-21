@@ -6,6 +6,8 @@ This project adds what GCP is missing: a real kill switch. When your monthly spe
 
 > 📖 **Full context and architecture walkthrough:** [GCP Has No Hard Spending Cap. Here's How to Add One in 15 Minutes.](https://paragmajithia.com/blog/gcp-bills-post/))
 
+![Problem Explanation](./billing-problem.png)
+
 ---
 
 ## How It Works
