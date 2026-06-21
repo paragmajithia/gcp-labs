@@ -36,20 +36,40 @@ def stop_billing(request: flask.Request):
     envelope = request.get_json(silent=True)
     if not envelope or "message" not in envelope:
         log.error("Invalid Pub/Sub message format received.")
-        return "Bad Request: missing message", 400
+        return "Ignored invalid envelope", 200
 
     pubsub_message = envelope["message"]
 
     # Step 2: Decode the base64-encoded message data
     if "data" not in pubsub_message:
         log.error("No data field in Pub/Sub message.")
-        return "Bad Request: missing data", 400
+        return "Ignored missing data", 200
 
-    pubsub_data = base64.b64decode(pubsub_message["data"]).decode("utf-8")
-    budget_msg  = json.loads(pubsub_data)
+    try:
+        pubsub_data = base64.b64decode(
+            pubsub_message["data"]
+        ).decode("utf-8")
 
-    cost_so_far  = budget_msg.get("costAmount", 0)
-    budget_limit = budget_msg.get("budgetAmount", 0)
+        budget_msg = json.loads(pubsub_data)
+
+        if "costAmount" not in budget_msg or "budgetAmount" not in budget_msg:
+            log.error("Missing required budget fields")
+            return "Ignored invalid schema", 200
+        
+    except json.JSONDecodeError as ex:
+        log.error(f"Malformed JSON received: {ex}")
+        return "Ignored malformed JSON", 200
+    except Exception as ex:
+        log.error(f"Unable to decode Pub/Sub payload: {ex}")
+        return "Ignored invalid payload", 200
+
+    
+    try:
+        cost_so_far = float(budget_msg["costAmount"])
+        budget_limit = float(budget_msg["budgetAmount"])
+    except (ValueError, TypeError):
+        log.error("Invalid numeric values in budget message")
+        return "Ignored invalid values", 200
 
     log.info(f"Budget check → Spent: ₹{cost_so_far} | Limit: ₹{budget_limit}")
 
@@ -60,8 +80,12 @@ def stop_billing(request: flask.Request):
 
     # Step 4: Over budget — disable billing
     log.warning(f"OVER BUDGET! ₹{cost_so_far} > ₹{budget_limit}. Disabling billing now...")
-    _disable_billing(PROJECT_ID)
-    return "OK: billing disabled", 200
+    try:
+        _disable_billing(PROJECT_ID)
+        return "OK: billing disabled", 200
+    except Exception:
+        log.exception("Failed to disable billing")
+        return "Temporary failure", 500
 
 
 def _disable_billing(project_id):
