@@ -117,47 +117,120 @@ PDF page or workbook sheet/row.
 
 ## Deploy the demo to Cloud Run
 
-1. Select your GCP project and enable the required APIs:
+The following commands use PowerShell. Replace the project ID and keep it
+explicit in commands so you do not deploy to the wrong project:
+
+```powershell
+$PROJECT_ID = "YOUR_PROJECT_ID"
+gcloud config set project $PROJECT_ID
+```
+
+1. Enable the required APIs:
 
    ```powershell
-   gcloud config set project PROJECT_ID
    gcloud services enable `
        run.googleapis.com `
        artifactregistry.googleapis.com `
        cloudbuild.googleapis.com `
-       secretmanager.googleapis.com
+       secretmanager.googleapis.com `
+       --project=$PROJECT_ID
    ```
 
 2. Create an Artifact Registry Docker repository:
 
    ```powershell
-   gcloud artifacts repositories create society-genie `
+   gcloud artifacts repositories create sample-rag-society `
        --repository-format=docker `
-       --location=us-central1
+       --location=us-central1 `
+       --project=$PROJECT_ID
    ```
 
-3. In Secret Manager, create `SOCIETY_GENIE_OPENAI_API_KEY` and store your
-   OpenAI key as its latest version. Grant the Cloud Run runtime service
-   account (`PROJECT_NUMBER-compute@developer.gserviceaccount.com`) the
-   `Secret Manager Secret Accessor` role on this secret.
+3. Create a **new, demo-only** Secret Manager secret named
+   `SAMPLE_RAG_SOCIETY_OPENAI_API_KEY` and store your OpenAI key as its latest
+   version. Do not reuse an existing secret: this lets cleanup safely delete
+   only the secret created for this demo. Get the project number and grant its
+   default Compute Engine service account access to the new secret:
+
+   ```powershell
+   gcloud secrets create SAMPLE_RAG_SOCIETY_OPENAI_API_KEY `
+       --replication-policy=automatic `
+       --project=$PROJECT_ID
+   # Add the key as a new secret version using the Cloud Console:
+   # Secret Manager > SAMPLE_RAG_SOCIETY_OPENAI_API_KEY > Add new version.
+   $PROJECT_NUMBER = gcloud projects describe $PROJECT_ID --format="value(projectNumber)"
+   $RUNTIME_SA = "$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+   gcloud secrets add-iam-policy-binding SAMPLE_RAG_SOCIETY_OPENAI_API_KEY `
+       --member="serviceAccount:$RUNTIME_SA" `
+       --role="roles/secretmanager.secretAccessor" `
+       --project=$PROJECT_ID
+   ```
 4. Build the index locally using the steps above.
 5. Build and deploy the image:
 
    ```powershell
    gcloud builds submit `
-       --tag "us-central1-docker.pkg.dev/PROJECT_ID/society-genie/society-genie-demo" `
+       --project=$PROJECT_ID `
+       --tag "us-central1-docker.pkg.dev/$PROJECT_ID/sample-rag-society/sample-rag-society-demo" `
        .
-   gcloud run deploy society-genie `
-       --image "us-central1-docker.pkg.dev/PROJECT_ID/society-genie/society-genie-demo" `
+   gcloud run deploy sample-rag-society `
+       --image "us-central1-docker.pkg.dev/$PROJECT_ID/sample-rag-society/sample-rag-society-demo" `
        --region us-central1 `
+       --project=$PROJECT_ID `
        --allow-unauthenticated `
        --min-instances=0 `
        --max-instances=1 `
-       --set-secrets "SOCIETY_GENIE_OPENAI_API_KEY=SOCIETY_GENIE_OPENAI_API_KEY:latest"
+       --set-secrets "SOCIETY_GENIE_OPENAI_API_KEY=SAMPLE_RAG_SOCIETY_OPENAI_API_KEY:latest"
    ```
 
 The image contains `demo.py` and the generated `chroma_db/`, not the source
 documents or `.env`. The service is public and can spend against your OpenAI
-key; use demo data, monitor usage, and delete the Cloud Run service after the
-video if it is no longer needed. Match the `CHAT_MODEL` in `demo.py` to a model
-available to your organization before deploying.
+key; use demo data, monitor usage, and run the cleanup below immediately after
+the demo. Match the `CHAT_MODEL` in `demo.py` to a model available to your
+organization before deploying.
+
+## Clean up after the demo
+
+Run this after you finish. Review `$PROJECT_ID`; these commands delete the
+Cloud Run service, Artifact Registry repository, and dedicated secret created
+by this demo.
+
+```powershell
+# Remove this demo's public Cloud Run service.
+gcloud run services delete sample-rag-society `
+    --region=us-central1 --project=$PROJECT_ID --quiet
+
+# Remove the container image repository created for this demo.
+gcloud artifacts repositories delete sample-rag-society `
+    --location=us-central1 --project=$PROJECT_ID --quiet
+
+# Remove the access grant added during deployment, then delete this demo's
+# dedicated secret. Do not delete or change any secret used by another app.
+$PROJECT_NUMBER = gcloud projects describe $PROJECT_ID --format="value(projectNumber)"
+$RUNTIME_SA = "$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+gcloud secrets remove-iam-policy-binding SAMPLE_RAG_SOCIETY_OPENAI_API_KEY `
+    --member="serviceAccount:$RUNTIME_SA" `
+    --role="roles/secretmanager.secretAccessor" `
+    --project=$PROJECT_ID --quiet
+gcloud secrets delete SAMPLE_RAG_SOCIETY_OPENAI_API_KEY `
+    --project=$PROJECT_ID --quiet
+```
+
+Verify the resources created by this deployment have been removed:
+
+```powershell
+gcloud run services list --region=us-central1 --project=$PROJECT_ID
+gcloud artifacts repositories list --location=us-central1 --project=$PROJECT_ID
+gcloud secrets list --project=$PROJECT_ID
+```
+
+Confirm that `sample-rag-society` is absent from the service and repository
+lists, and `SAMPLE_RAG_SOCIETY_OPENAI_API_KEY` is absent from the secret list.
+
+The deployment enables Google Cloud APIs but does not create them as billable
+resources; this guide leaves them enabled because other workloads in a project
+may use them. It also does not delete the project or any unrelated resources.
+Therefore, this cleanup removes this demo's deployed resources, but cannot
+guarantee zero charges for the whole project. Check the project's Billing
+reports for any remaining usage. Deleting the Secret Manager secret does not
+revoke the OpenAI API key; revoke it in your OpenAI account if you will no
+longer use it.
