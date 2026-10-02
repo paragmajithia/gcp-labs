@@ -7,11 +7,34 @@ and return an AI answer with page/row citations.
 The included agenda and expense sheet are small, fictional examples created for
 this demo. They contain no real society or personal data.
 
-```text
-documents/AGM PDF ── text/OCR ─┐
-                               ├─ chunks + embeddings ─ Chroma ─ /ask + chat page
-documents/expense workbook ────┘
+```mermaid
+flowchart TB
+    subgraph BUILD["Build the index (run before serving)"]
+        direction LR
+        PDF["AGM PDF"] -->|A| EXTRACT["Extract text / OCR"]
+        XLSX["Expense workbook"] -->|A| EXTRACT
+        EXTRACT -->|B| CHUNKS["Create passages and row records"]
+        CHUNKS -->|C| DOC_EMBED["Create document embeddings<br/>with OpenAI"]
+    end
+    DOC_EMBED -->|D| INDEX[("Persistent Chroma store<br/>SQLite metadata + vector index files")]
+
+    subgraph ASK_FLOW["Ask a question (through either entry point)"]
+        direction LR
+        BROWSER["Browser chat"] -->|1. question| ASK["FastAPI /ask"]
+        CLIENT["API client"] -->|1. POST /ask question| ASK
+        ASK -->|2| Q_EMBED["Embed question<br/>with OpenAI"]
+        Q_EMBED -->|3. query vector| INDEX
+        INDEX -->|4. matching passages + citations| ANSWER["Generate grounded answer<br/>with OpenAI"]
+        ANSWER -->|5. answer + sources| ASK
+        ASK -->|6. display answer| BROWSER
+        ASK -->|6. JSON response| CLIENT
+    end
 ```
+
+**Index flow:** A. extract source text; B. create passages/records; C. embed
+them; D. persist them in Chroma. **Question flow:** 1. submit a question from
+the chat or API; 2. embed it; 3–4. search Chroma and retrieve matching
+passages; 5. generate a grounded answer; 6. return the answer and citations.
 
 It is intentionally public and has no user authentication. Use only demo data.
 
