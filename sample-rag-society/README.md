@@ -125,7 +125,16 @@ $PROJECT_ID = "YOUR_PROJECT_ID"
 gcloud config set project $PROJECT_ID
 ```
 
-1. Enable the required APIs:
+1. Check which APIs are already enabled, then enable the APIs required by
+   this demo. The list command shows all enabled APIs in the selected project;
+   look for `run.googleapis.com`, `artifactregistry.googleapis.com`,
+   `cloudbuild.googleapis.com`, and `secretmanager.googleapis.com`.
+
+   ```powershell
+   gcloud services list --enabled --project=$PROJECT_ID
+   ```
+
+   Enabling an API that is already enabled is safe, so you can run:
 
    ```powershell
    gcloud services enable `
@@ -181,6 +190,19 @@ gcloud config set project $PROJECT_ID
        --max-instances=1 `
        --set-secrets "SOCIETY_GENIE_OPENAI_API_KEY=SAMPLE_RAG_SOCIETY_OPENAI_API_KEY:latest"
    ```
+
+After deployment, get the service URL with:
+
+```powershell
+gcloud run services describe sample-rag-society `
+    --region=us-central1 `
+    --project=$PROJECT_ID `
+    --format="value(status.url)"
+```
+
+Open the URL printed by that command to use the chat demo. Add `/docs` to the
+URL for interactive API documentation, or `/health` to check the service.
+The deploy command also prints the service URL when deployment succeeds.
 
 The image contains `demo.py` and the generated `chroma_db/`, not the source
 documents or `.env`. The service is public and can spend against your OpenAI
