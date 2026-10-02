@@ -1,0 +1,9 @@
+documents/
+*.xlsx
+*.pdf
+.env
+.git/
+.venv/
+__pycache__/
+*.pyc
+README.md

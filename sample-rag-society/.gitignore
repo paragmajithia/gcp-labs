@@ -1,0 +1,12 @@
+# Generated index
+documents/*
+!documents/sample_agenda.pdf
+!documents/sample_expenses.xlsx
+*.sqlite
+chroma_db/
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
